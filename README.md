@@ -68,3 +68,11 @@ The original `python main.py` interface remains available. Install `requirements
 ## Deployment scope
 
 This server is for a personal development workflow and binds to loopback by default. Before exposing it to other people, add user authentication, persistent per-user storage, TLS via a reverse proxy and deployment-level rate limits. The built-in server is not a production hosting stack. No public site has been deployed by this repository change.
+
+## Voice troubleshooting on Mac
+
+If **Friday-мен сөйлесу** immediately turns off, read the reason next to the button. The button now refreshes AI readiness before starting. The browser must support speech recognition (Chrome/Edge recommended); open the served loopback address, not the HTML file directly. Grant access in browser site settings and macOS **Privacy & Security → Microphone**. For `language-not-supported`, select Russian or English in Friday settings.
+
+Settings display recognition/secure-context/native-voice support and include **Дыбысты тексеру**. On macOS, automatic synthesis uses built-in `say` and `afconvert`, creates a temporary WAV and plays it in the browser. No audio text is sent externally by this synthesis route. If Kazakh has no installed system voice, it falls back to a Russian or English voice and reports that choice; pronunciation may be imperfect. You can explicitly select browser synthesis. Microphone recognition still depends on the browser; native synthesis does not add missing speech recognition support.
+
+`bash diagnose.command` runs read-only setup checks without printing credentials. It reports Python, virtualenv, Ollama/model availability and local web-server readiness. Native command behavior and routes are tested using subprocess fixtures; actual Mac hardware playback still requires a device check.

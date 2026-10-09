@@ -7,8 +7,14 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else "Python 3.10+ қажет")'
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-web.txt
+if ! python3 -m venv .venv; then
+  echo "Python виртуалды ортасы жасалмады. python.org сайтынан Python 3.10+ орнатыңыз."
+  exit 1
+fi
+if ! .venv/bin/python -m pip install -r requirements-web.txt; then
+  echo "Тәуелділіктер орнатылмады. Жоғарыдағы pip қатесін көшіріңіз."
+  exit 1
+fi
 ollama_pid=""
 friday_pid=""
 cleanup() {
@@ -31,13 +37,17 @@ else
   friday_choice=""
 fi
 if [ "$FRIDAY_PROVIDER" = "ollama" ]; then
-  if ! command -v ollama >/dev/null 2>&1; then
+  ollama_bin="$(command -v ollama || true)"
+  if [ -z "$ollama_bin" ] && [ -x /Applications/Ollama.app/Contents/Resources/ollama ]; then
+    ollama_bin=/Applications/Ollama.app/Contents/Resources/ollama
+  fi
+  if [ -z "$ollama_bin" ]; then
     echo "Алдымен https://ollama.com/download/mac сайтынан Ollama орнатыңыз және ашыңыз."
     echo "Содан кейін bash start.command командасын қайта орындаңыз."
     exit 1
   fi
   if ! curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then
-    ollama serve > .venv/ollama.log 2>&1 &
+    "$ollama_bin" serve > .venv/ollama.log 2>&1 &
     ollama_pid=$!
     for attempt in {1..30}; do
       if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
@@ -46,7 +56,14 @@ if [ "$FRIDAY_PROVIDER" = "ollama" ]; then
   fi
   export FRIDAY_MODEL="${FRIDAY_MODEL:-qwen3:4b}"
   echo "Модель: $FRIDAY_MODEL. Алғашқы жүктеу бірнеше ГБ және уақыт қажет етеді."
-  ollama pull "$FRIDAY_MODEL"
+  if ! curl --silent --fail --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null; then
+    echo "Ollama 11434 портында жауап бермейді. Ollama қолданбасын ашып, қайта іске қосыңыз."
+    exit 1
+  fi
+  if ! "$ollama_bin" pull "$FRIDAY_MODEL"; then
+    echo "Модель жүктелмеді. Жоғарыдағы Ollama қатесін көшіріңіз."
+    exit 1
+  fi
 elif [ "$FRIDAY_PROVIDER" = "openai" ]; then
   if [ "${friday_choice:-}" != "3" ] && [ -z "${FRIDAY_API_KEY:-}${Nurzhik_06:-}${OPENAI_API_KEY:-}" ]; then
     echo "OpenAI API кілтін енгізіңіз (экранда көрсетілмейді)."
@@ -68,7 +85,16 @@ for attempt in {1..20}; do
     exit 1
   fi
   if curl --silent --fail "http://127.0.0.1:$PORT/api/status" >/dev/null; then
-    open "http://127.0.0.1:$PORT"
+    friday_browser=""
+    for app in "/Applications/Google Chrome.app" "$HOME/Applications/Google Chrome.app" "/Applications/Microsoft Edge.app" "$HOME/Applications/Microsoft Edge.app"; do
+      if [ -d "$app" ]; then friday_browser="$app"; break; fi
+    done
+    if [ -n "$friday_browser" ]; then
+      open -a "$friday_browser" "http://127.0.0.1:$PORT" || echo "Бетті Chrome/Edge ішінде қолмен ашыңыз: http://127.0.0.1:$PORT"
+    else
+      echo "Дауыспен сөйлесу үшін Chrome немесе Edge орнатыңыз. Safari дауыс тануын қолдамауы мүмкін."
+      open "http://127.0.0.1:$PORT" || echo "Бетті қолмен ашыңыз: http://127.0.0.1:$PORT"
+    fi
     echo "Friday іске қосылды. Тоқтату үшін Ctrl+C басыңыз немесе Terminal терезесін жабыңыз."
     wait "$friday_pid"
     exit 0

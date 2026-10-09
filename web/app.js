@@ -5,12 +5,13 @@ let state = {
   chats: [],
   active: null,
   notes: [],
-  settings: { lang: "kk-KZ", speak: false },
+  settings: { lang: "kk-KZ", speak: false, engine: "auto" },
 };
 let pending = null;
 let recognition = null;
 let listening = false;
 let configured = false;
+let nativeSpeech = false;
 let voiceMode = false;
 let speaking = false;
 let restartTimer = null;
@@ -72,6 +73,7 @@ try {
         ? saved.settings.lang
         : "kk-KZ",
       speak: saved.settings?.speak === true,
+      engine: saved.settings?.engine === "browser" ? "browser" : "auto",
     };
   }
 } catch {
@@ -152,7 +154,84 @@ function renderHistory() {
     history.append(row);
   }
 }
+function nativeSpeak(text) {
+  cancelSpeech();
+  return new Promise((resolve) => {
+    speaking = true;
+    recognition?.abort?.();
+    if (voiceMode) sessionState("Mac дауысы дайындалуда…");
+    const controller = new AbortController();
+    let audio = null,
+      url = null,
+      finished = false;
+    const timer = setTimeout(() => {
+      notice("Дыбыстау уақыты аяқталды.");
+      done(false);
+    }, 150000);
+    const done = (ok) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      controller.abort();
+      if (audio) {
+        audio.onended = null;
+        audio.onerror = null;
+        audio.pause();
+      }
+      if (url) URL.revokeObjectURL(url);
+      speaking = false;
+      speechFinish = null;
+      resolve(ok);
+      resumeListening();
+    };
+    speechFinish = done;
+    (async () => {
+      try {
+        const response = await fetch("/api/speech", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, language: state.settings.lang }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Mac дауысы жасалмады.");
+        }
+        const blob = await response.blob();
+        if (finished) return;
+        const locale = response.headers.get("X-Friday-Voice-Language");
+        if (locale && locale.slice(0, 2) !== state.settings.lang.slice(0, 2))
+          notice(
+            "Таңдалған тілдің дауысы жоқ. Mac-тың " +
+              locale +
+              " дауысы қолданылды.",
+          );
+        url = URL.createObjectURL(blob);
+        audio = new Audio(url);
+        audio.onended = () => done(true);
+        audio.onerror = () => {
+          notice(
+            "Дыбыс ойнатылмады. Браузер мен Mac дыбыс деңгейін тексеріңіз.",
+          );
+          done(false);
+        };
+        if (voiceMode) sessionState("Friday жауап беруде…");
+        await audio.play();
+      } catch (error) {
+        if (finished) return;
+        notice(
+          error.name === "NotAllowedError"
+            ? "Браузер дыбысты бұғаттады. Баптаулардан «Дыбысты тексеру» басыңыз."
+            : error.message,
+        );
+        done(false);
+      }
+    })();
+  });
+}
 function speak(text) {
+  if (nativeSpeech && state.settings.engine === "auto")
+    return nativeSpeak(text);
   if (
     !("speechSynthesis" in window) ||
     !("SpeechSynthesisUtterance" in window)
@@ -178,9 +257,16 @@ function speak(text) {
         "Қазақша дауыс жоқ болса, Баптаулардан орысша немесе ағылшынша таңдаңыз.",
       );
     let finished = false;
+    const watchdog = setTimeout(() => {
+      notice(
+        "Браузер дауысы жауап бермеді. Баптаулардан Mac дауысын таңдаңыз.",
+      );
+      done(false);
+    }, 180000);
     const done = (ok) => {
       if (finished) return;
       finished = true;
+      clearTimeout(watchdog);
       speaking = false;
       speechFinish = null;
       resolve(ok);
@@ -361,11 +447,33 @@ $("main").addEventListener("click", (e) => {
 $("#settings-open").addEventListener("click", () => {
   $("#voice-lang").value = state.settings.lang;
   $("#auto-speak").checked = state.settings.speak;
+  $("#speech-engine").value = state.settings.engine;
+  $("#speech-info").textContent =
+    `Микрофон тануы: ${Recognition ? "бар" : "жоқ — Chrome/Edge қолданыңыз"}. Қауіпсіз бет: ${window.isSecureContext ? "иә" : "жоқ — localhost арқылы ашыңыз"}. Mac дауысы: ${nativeSpeech ? "бар" : "жоқ"}.`;
   $("#settings").showModal();
 });
 $("#voice-lang").addEventListener("change", (e) => {
+  stopSession();
   state.settings.lang = e.target.value;
   save();
+});
+$("#speech-engine").addEventListener("change", (e) => {
+  stopSession();
+  state.settings.engine = e.target.value;
+  save();
+});
+$("#test-speech").addEventListener("click", async () => {
+  const text =
+    state.settings.lang === "ru-RU"
+      ? "Здравствуйте, я Фрайдей. Проверка звука."
+      : state.settings.lang === "en-US"
+        ? "Hello, I am Friday. This is a sound test."
+        : "Сәлем, мен Friday. Дыбысты тексеру.";
+  $("#speech-info").textContent = "Дыбыс тексерілуде…";
+  const ok = await speak(text);
+  $("#speech-info").textContent = ok
+    ? "Дыбыстау аяқталды. Естілмесе, Mac дыбыс деңгейін және таңдалған шығару құрылғысын тексеріңіз."
+    : $("#notice").textContent;
 });
 $("#auto-speak").addEventListener("change", (e) => {
   state.settings.speak = e.target.checked;
@@ -442,9 +550,11 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 function startListening(automatic = false) {
   if (!Recognition || !window.isSecureContext) {
     stopSession();
-    return notice(
-      "Дауыс режиміне Chrome/Edge және HTTPS немесе localhost қажет.",
-    );
+    const message = !Recognition
+      ? "Бұл браузерде дауыс тану жоқ. Chrome немесе Edge арқылы ашыңыз."
+      : "Бетті localhost арқылы ашыңыз: http://127.0.0.1:8000";
+    sessionState(message);
+    return notice(message);
   }
   if (pending || speaking) return;
   const current = new Recognition();
@@ -482,11 +592,19 @@ function startListening(automatic = false) {
     if (recognition !== current) return;
     if (e.error === "aborted" || e.error === "no-speech") return;
     stopSession();
-    notice(
-      e.error === "not-allowed"
-        ? "Микрофонға рұқсат беріңіз."
-        : "Дауыс тану қатесі: " + e.error + ". Мәтінмен жаза аласыз.",
-    );
+    const errors = {
+      "not-allowed":
+        "Микрофонға рұқсат беріңіз: браузер баптауы және Mac System Settings → Privacy & Security → Microphone.",
+      "audio-capture":
+        "Микрофон табылмады. Mac-та енгізу құрылғысын тексеріңіз.",
+      "language-not-supported":
+        "Бұл тілде дауыс тану қолжетімсіз. Баптаулардан Русский немесе English таңдаңыз.",
+      network:
+        "Дауыс тану қызметіне байланыс жоқ. Chrome/Edge және интернетті тексеріңіз.",
+    };
+    const message = errors[e.error] || "Дауыс тану қатесі: " + e.error;
+    sessionState(message);
+    notice(message);
   };
   current.onend = () => {
     if (recognition !== current) return;
@@ -514,14 +632,26 @@ $("#mic").addEventListener("click", () => {
   }
   startListening();
 });
-$("#voice-session").addEventListener("click", () => {
+$("#voice-session").addEventListener("click", async () => {
   if (voiceMode) {
     stopSession();
     return;
   }
   if (pending) return notice("Алдымен жауаптың аяқталуын күтіңіз.");
-  if (!configured)
+  if (!Recognition || !window.isSecureContext) {
+    startListening(true);
+    return;
+  }
+  $("#voice-session").disabled = true;
+  try {
+    await checkStatus();
+  } finally {
+    $("#voice-session").disabled = false;
+  }
+  if (!configured) {
+    sessionState("AI қосылымы дайын емес.");
     return notice("Алдымен Ollama моделін немесе OpenAI кілтін қосыңыз.");
+  }
   stopSession();
   if (!activeChat()) newChat();
   voiceMode = true;
@@ -543,6 +673,7 @@ async function checkStatus() {
     if (!response.ok) throw new Error("Status failed");
     const data = await response.json();
     configured = data.configured;
+    nativeSpeech = data.native_speech === true;
     $("#status").textContent = configured
       ? data.provider === "ollama"
         ? "Жергілікті AI дайын"
@@ -559,6 +690,7 @@ async function checkStatus() {
         data.detail || "AI жауаптары үшін Ollama немесе API кілтін қосыңыз.",
       );
   } catch {
+    configured = false;
     $("#status").textContent = "Сервер қолжетімсіз";
     $("#status").classList.remove("online");
     $("#connection-info").textContent = "Сервермен байланыс жоқ.";

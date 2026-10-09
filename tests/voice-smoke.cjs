@@ -44,7 +44,10 @@ const assert = require("node:assert/strict");
         window.__starts++;
         this.onstart?.();
         if (window.__deny) {
-          this.timer=setTimeout(() => this.onerror?.({error:'not-allowed'}),20);
+          this.timer = setTimeout(
+            () => this.onerror?.({ error: "not-allowed" }),
+            20,
+          );
           return;
         }
         const text = window.__voiceQueue.shift();
@@ -120,15 +123,53 @@ const assert = require("node:assert/strict");
     await page.locator("#voice-session").getAttribute("aria-pressed"),
     "false",
   );
-  await page.route('**/api/chat', r => r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'AI unavailable'})}));
-  await page.evaluate(() => window.__voiceQueue=['Қате сұрау']);
-  await page.locator('#voice-session').click();
-  await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('AI unavailable'));
-  assert.equal(await page.locator('#voice-session').getAttribute('aria-pressed'),'false');
-  await page.evaluate(() => window.__deny=true);
-  await page.locator('#voice-session').click();
-  await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('Микрофонға рұқсат'));
-  assert.equal(await page.locator('#voice-session').getAttribute('aria-pressed'),'false');
+  await page.route("**/api/chat", (r) =>
+    r.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "AI unavailable" }),
+    }),
+  );
+  await page.evaluate(() => (window.__voiceQueue = ["Қате сұрау"]));
+  await page.locator("#voice-session").click();
+  await page.waitForFunction(() =>
+    document.querySelector("#notice").textContent.includes("AI unavailable"),
+  );
+  assert.equal(
+    await page.locator("#voice-session").getAttribute("aria-pressed"),
+    "false",
+  );
+  await page.evaluate(() => (window.__deny = true));
+  await page.locator("#voice-session").click();
+  await page.waitForFunction(() =>
+    document.querySelector("#notice").textContent.includes("Микрофонға рұқсат"),
+  );
+  assert.equal(
+    await page.locator("#voice-session").getAttribute("aria-pressed"),
+    "false",
+  );
+  let ready = false;
+  await page.route("**/api/status", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        configured: ready,
+        provider: "ollama",
+        model: "test",
+      }),
+    }),
+  );
+  await page.reload();
+  await page.getByText("Ollama қосылмаған", { exact: true }).waitFor();
+  ready = true;
+  await page.evaluate(() => (window.__voiceQueue = ["тоқта"]));
+  await page.locator("#voice-session").click();
+  await page.waitForFunction(
+    () =>
+      window.__starts === 1 &&
+      document.querySelector("#voice-session").getAttribute("aria-pressed") ===
+        "false",
+  );
   assert.deepEqual(errors, []);
   await browser.close();
   console.log(

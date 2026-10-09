@@ -6,9 +6,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 import ai_core
+import mac_speech
 
 WEB = Path(__file__).resolve().parent / 'web'
 SLOTS = threading.BoundedSemaphore(4)
+SPEECH_SLOTS = threading.BoundedSemaphore(2)
 
 
 def validate_messages(payload):
@@ -37,7 +39,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'same-origin')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'")
         self.end_headers()
 
     def reply(self, status, payload):
@@ -49,7 +51,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         if path == '/api/status':
-            return self.reply(200, ai_core.status())
+            return self.reply(200, {**ai_core.status(), 'native_speech': mac_speech.available()})
         files = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if path not in files:
             return self.reply(404, {'error': 'Табылмады.'})
@@ -60,7 +62,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path != '/api/chat':
+        if self.path not in ('/api/chat', '/api/speech'):
             return self.reply(404, {'error': 'Табылмады.'})
         origin = self.headers.get('Origin')
         host = self.headers.get('Host', '')
@@ -70,7 +72,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 100000:
                 return self.reply(413, {'error': 'Сұрау тым үлкен немесе бос.'})
-            messages = validate_messages(json.loads(self.rfile.read(length)))
+            payload = json.loads(self.rfile.read(length))
+            if self.path == '/api/speech':
+                return self.speech_reply(payload)
+            messages = validate_messages(payload)
         except (ValueError, UnicodeError):
             return self.reply(400, {'error': 'Хабарлама форматы қате (шегі: 12 000 таңба, 40 хабарлама).'})
         if not ai_core.configured():
@@ -85,6 +90,24 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(502, {'error': errors.get(type(exc).__name__, 'AI қызметіне қосылу мүмкін болмады. Ollama іске қосылғанын немесе API байланысын тексеріңіз.')})
         finally:
             SLOTS.release()
+
+    def speech_reply(self, payload):
+        if not isinstance(payload, dict) or not isinstance(payload.get('text'), str) or not payload['text'].strip() or len(payload['text']) > 12000 or payload.get('language') not in ('kk-KZ', 'ru-RU', 'en-US'):
+            return self.reply(400, {'error': 'Мәтін немесе дауыс тілі қате.'})
+        if not mac_speech.available():
+            return self.reply(503, {'error': 'Mac дауысы бұл серверде қолжетімсіз.'})
+        if not SPEECH_SLOTS.acquire(blocking=False):
+            return self.reply(429, {'error': 'Дауыс жасалып жатыр. Сәл кейін қайталаңыз.'})
+        try:
+            audio, locale = mac_speech.synthesize(payload['text'], payload['language'])
+            self.send_response(200)
+            self.send_header('X-Friday-Voice-Language', locale)
+            self.headers_out('audio/wav', len(audio))
+            self.wfile.write(audio)
+        except Exception:
+            return self.reply(502, {'error': 'Mac дыбыстауы орындалмады. Дауыс орнатылғанын тексеріңіз немесе браузер дауысын таңдаңыз.'})
+        finally:
+            SPEECH_SLOTS.release()
 
 
 def main():
