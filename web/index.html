@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="kk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c111b" />
+    <title>Friday — жеке AI көмекші</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <aside id="sidebar">
+      <a class="brand" href="/" aria-label="Friday басты бет"
+        ><span class="logo">F<span>·</span></span
+        ><span
+          >friday<span class="brand-dot">.</span
+          ><small>PERSONAL INTELLIGENCE</small></span
+        ></a
+      >
+      <button id="new-chat" class="new-chat">
+        <span>＋</span> Жаңа әңгіме <kbd>⌘ K</kbd>
+      </button>
+      <div class="section-label">ӘҢГІМЕЛЕР</div>
+      <nav id="history" aria-label="Әңгімелер тарихы"></nav>
+      <div class="sidebar-bottom">
+        <button id="notes-open">▤ <span>Менің жазбаларым</span></button
+        ><button id="settings-open">⚙ <span>Баптаулар</span></button>
+        <div class="profile">
+          <div class="avatar">С</div>
+          <div>Сіздің кеңістігіңіз<small>Осы браузерде сақталады</small></div>
+        </div>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div class="header-left">
+          <button id="menu" class="icon-button" aria-label="Мәзір">☰</button
+          ><span>Friday AI</span><span class="version">01</span>
+        </div>
+        <div class="header-right">
+          <span id="status" class="status">Байланыс тексерілуде</span
+          ><button
+            id="export"
+            class="icon-button"
+            title="Әңгімені жүктеу"
+            aria-label="Әңгімені жүктеу"
+          >
+            ↓
+          </button>
+        </div>
+      </header>
+      <div id="conversation" class="conversation">
+        <section id="welcome" class="welcome">
+          <div class="eyebrow"><span></span> СІЗДІҢ ЖЕКЕ AI КӨМЕКШІҢІЗ</div>
+          <div class="orb" aria-hidden="true">
+            <div class="orb-inner">F</div>
+          </div>
+          <h1>Сәлем. Мен <em>Friday.</em></h1>
+          <p>Ойыңызды айтыңыз.<br />Бірге оны нақты нәтижеге айналдырайық.</p>
+          <div class="suggestions">
+            <button
+              data-prompt="Бүгінгі күнімді жоспарлауға көмектес. Алдымен мақсаттарым туралы сұра."
+            >
+              <span>→</span><strong>Күнді жоспарлау</strong
+              ><small>Маңызды істерге орын табайық</small></button
+            ><button
+              data-prompt="Маған жаңа жоба үшін шығармашылық идеялар ұсын. Алдымен қызығушылықтарымды сұра."
+            >
+              <span>✧</span><strong>Идея табу</strong
+              ><small>Жаңа көзқарас, жаңа мүмкіндік</small></button
+            ><button
+              data-prompt="Маған Python үйренуге көмектес. Деңгейімді анықтаудан баста."
+            >
+              <span>⌘</span><strong>Кодпен көмектесу</strong
+              ><small>Түсіну, жазу және жақсарту</small></button
+            ><button
+              data-prompt="Қазақ тілінде түсінікті әрі әсерлі мәтін жазуға көмектес. Тақырып пен аудиторияны сұра."
+            >
+              <span>✎</span><strong>Мәтін жазу</strong
+              ><small>Ойыңызға лайық сөздер</small>
+            </button>
+          </div>
+        </section>
+        <div
+          id="messages"
+          class="messages"
+          role="log"
+          aria-live="polite"
+          aria-label="Әңгіме"
+        ></div>
+      </div>
+      <div class="composer-area">
+        <div id="notice" class="notice" role="status"></div>
+        <button type="button" id="retry" class="secondary hidden">
+          Қайта жіберу
+        </button>
+        <form id="chat-form" class="composer">
+          <textarea
+            id="input"
+            rows="1"
+            maxlength="12000"
+            placeholder="Friday-ға хабарлама жазыңыз…"
+            aria-label="Хабарлама"
+          ></textarea>
+          <div class="composer-tools">
+            <div>
+              <button
+                type="button"
+                id="mic"
+                class="icon-button"
+                title="Дауыспен енгізу"
+                aria-label="Дауыспен енгізу"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+                </svg></button
+              ><span id="voice-label">Мәтін немесе дауыс</span>
+            </div>
+            <button type="submit" id="send" class="send" aria-label="Жіберу">
+              ↑
+            </button>
+          </div>
+        </form>
+        <p class="footer-note">
+          Friday қателесуі мүмкін. Маңызды ақпаратты тексеріңіз.
+          <span>Enter — жіберу · Shift + Enter — жаңа жол</span>
+        </p>
+      </div>
+    </main>
+    <dialog id="settings">
+      <div class="dialog-heading">
+        <h2>Баптаулар</h2>
+        <button class="close icon-button" aria-label="Жабу">×</button>
+      </div>
+      <p>Өзіңізге ыңғайлы Friday.</p>
+      <label
+        >Дауыс тілі<select id="voice-lang">
+          <option value="kk-KZ">Қазақша</option>
+          <option value="ru-RU">Русский</option>
+          <option value="en-US">English</option>
+        </select></label
+      ><label class="toggle"
+        >Жауапты дауыстап оқу<input type="checkbox" id="auto-speak" /></label
+      ><button id="stop-speech" class="secondary">Дауысты тоқтату</button>
+      <div class="info-box">
+        <strong>AI қосылымы</strong>
+        <p id="connection-info"></p>
+        <small
+          >API кілті серверде сақталады. Әңгімелер осы браузерде сақталады; AI
+          сұраулары OpenAI-ға жіберіледі. Дауыс тану браузер провайдерінің
+          қызметін қолдануы мүмкін.</small
+        >
+      </div>
+      <button id="clear-all" class="danger">Барлық әңгімелерді өшіру</button>
+    </dialog>
+    <dialog id="notes">
+      <div class="dialog-heading">
+        <h2>Менің жазбаларым</h2>
+        <button class="close icon-button" aria-label="Жабу">×</button>
+      </div>
+      <p>Идеялар мен маңызды ойларды сақтаңыз.</p>
+      <form id="note-form">
+        <textarea
+          id="note-input"
+          maxlength="5000"
+          placeholder="Жаңа жазба…"
+          aria-label="Жаңа жазба"
+          required
+        ></textarea
+        ><button class="secondary" type="submit">Жазбаны сақтау</button>
+      </form>
+      <div id="note-list"></div>
+    </dialog>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 openai
 pyttsx3
-whisper
+openai-whisper
 sounddevice
 numpy
 scipy
