@@ -94,6 +94,16 @@ class Transcriber:
         self.lock = threading.Lock()
 
     def transcribe(self, audio, provider, key="", language="kk"):
+        try:
+            return self._transcribe(audio, provider, key, language)
+        except TypeError as exc:
+            raise ValueError(
+                "Дауыс кітапханасының үйлесімділік қатесі: "
+                + str(exc)[:300]
+                + ". Жаңартылған requirements-desktop.txt арқылы start.command-ты қайта ашыңыз."
+            ) from exc
+
+    def _transcribe(self, audio, provider, key="", language="kk"):
         if provider == "openai":
             from openai import OpenAI
             import os

@@ -75,6 +75,12 @@ class ApprovalRequest:
 
 
 def friendly_error(exc):
+    if isinstance(exc, TypeError):
+        # Parameter/type failures need their message to diagnose incompatible wheels.
+        import re
+
+        detail = re.sub(r"sk-[A-Za-z0-9_-]+", "[hidden]", str(exc))[:350]
+        return "TypeError: " + detail
     if isinstance(exc, (ValueError, InterruptedError)):
         return str(exc)
     names = {
@@ -204,6 +210,9 @@ class Window(QMainWindow):
         self.speak_check = QCheckBox("Жауапты дауыстап оқу")
         self.speak_check.setChecked(prefs.get("speak", True))
         body.addWidget(self.speak_check)
+        self.test_voice_button = QPushButton("♫ Дыбысты тексеру")
+        self.test_voice_button.clicked.connect(self.test_voice)
+        body.addWidget(self.test_voice_button)
         self.input = QPlainTextEdit()
         self.input.setMaximumHeight(100)
         self.input.setPlaceholderText(
@@ -286,6 +295,8 @@ class Window(QMainWindow):
             self.status.setText("Тарихты сақтау мүмкін болмады.")
 
     def set_folder(self, path):
+        if not isinstance(path, (str, Path)) or not str(path).strip():
+            raise ValueError("Жұмыс папкасы таңдалмаған. Папканы қайта таңдаңыз.")
         self.workspace = Workspace(path)
         self.folder_label.setText(str(self.workspace.root))
         self.fs.setRootPath(str(self.workspace.root))
@@ -620,6 +631,11 @@ class Window(QMainWindow):
             return
         self.submit()
 
+    def test_voice(self):
+        if self.recording or self.busy:
+            return self.progress("Алдымен жазбаны немесе тапсырманы тоқтатыңыз.")
+        self.say("Сәлем! Friday дауысы жұмыс істейді.")
+
     def say(self, text):
         if platform.system() != "Darwin":
             return self.progress("Жүйелік дауыс тек Mac-та қолжетімді.")
@@ -654,7 +670,13 @@ class Window(QMainWindow):
                         )
                         self.speech_process = process
                     try:
-                        process.wait(timeout=180)
+                        code = process.wait(timeout=180)
+                        if code:
+                            raise ValueError(
+                                "Mac say дыбыстай алмады (код "
+                                + str(code)
+                                + "). System Settings → Sound → Output құрылғысы мен дыбыс деңгейін тексеріңіз."
+                            )
                     finally:
                         if process.poll() is None:
                             process.kill()

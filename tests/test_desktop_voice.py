@@ -89,3 +89,15 @@ class DesktopVoiceTests(unittest.TestCase):
             clock.return_value = 120
             self.assertEqual(mic.recording_state(), "silent")
             mic.close()
+
+    @patch(
+        "faster_whisper.WhisperModel",
+        side_effect=TypeError("unexpected keyword argument test_option"),
+    )
+    def test_incompatible_voice_dependency_is_actionable(self, model):
+        with (
+            tempfile.TemporaryDirectory() as home,
+            patch("desktop.voice.Path.home", return_value=Path(home)),
+        ):
+            with self.assertRaisesRegex(ValueError, "test_option.*start.command"):
+                Transcriber().transcribe(b"audio", "ollama")

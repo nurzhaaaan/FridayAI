@@ -161,3 +161,19 @@ class NativeGUItests(unittest.TestCase):
                 self.assertIn("Микрофон дыбыс қабылдамады", window.status.text())
                 submit.assert_not_called()
             window.close()
+
+    def test_sound_check_does_not_require_ai_and_empty_folder_is_rejected(self):
+        with (
+            patch("desktop.storage.load", return_value={}),
+            patch("desktop.storage.save"),
+        ):
+            window = Window()
+            with patch.object(window, "say") as say:
+                window.test_voice_button.click()
+                say.assert_called_once_with("Сәлем! Friday дауысы жұмыс істейді.")
+            for invalid in (None, "", False):
+                with self.assertRaises(ValueError):
+                    window.set_folder(invalid)
+            self.assertIsNone(window.workspace.root)
+            self.assertNotEqual(window.folder_label.text(), "None")
+            window.close()
