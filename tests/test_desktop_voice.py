@@ -65,3 +65,27 @@ class DesktopVoiceTests(unittest.TestCase):
             self.assertEqual(
                 (Path(home) / "workspace.json").stat().st_mode & 0o777, 0o600
             )
+
+    @patch("sounddevice.RawInputStream")
+    @patch("sounddevice.query_devices", return_value={"default_samplerate": 16000})
+    def test_speech_then_silence_completes_but_background_silence_does_not(
+        self, query, stream
+    ):
+        with patch("desktop.voice.time.monotonic", return_value=100) as clock:
+            mic = Microphone()
+            mic.start()
+            callback = stream.call_args.kwargs["callback"]
+            callback(b"\0\0" * 160, 160, None, None)
+            clock.return_value = 105
+            self.assertEqual(mic.recording_state(), "listening")
+            callback(b"\x00\x10" * 160, 160, None, None)
+            clock.return_value = 106
+            self.assertEqual(mic.recording_state(), "listening")
+            callback(b"\0\0" * 160, 160, None, None)
+            clock.return_value = 107
+            self.assertEqual(mic.recording_state(), "complete")
+            mic.close()
+            mic.start()
+            clock.return_value = 120
+            self.assertEqual(mic.recording_state(), "silent")
+            mic.close()

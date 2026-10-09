@@ -99,3 +99,14 @@ Official implementation references: [Qt for Python](https://doc.qt.io/qtforpytho
 `bash web.command` starts the previous web UI. Browser smoke tests are in `tests/browser-smoke.cjs`, `tests/voice-smoke.cjs` and `tests/native-speech-smoke.cjs`, requiring Playwright and an installed Chromium browser. `requirements-web.txt` is enough for web-only runtime; the complete Python test suite now needs desktop dependencies.
 
 The original `main.py` voice loop uses `requirements.txt`, OpenAI Whisper, platform audio libraries and a physical microphone. It is retained for compatibility. The committed old macOS Python binaries are not used by the new desktop launcher or app bundle.
+
+
+### Дауыспен бұйрық беру
+
+«Дауыспен айту» батырмасын бір рет басып, бұйрықты айтыңыз. Шамамен 1,8 секунд
+үнсіздіктен кейін жазба автоматты түрде мәтінге айналып, тапсырма орындалады.
+Батырманы қайта басып, бірден жіберуге де болады. Танылған бұйрық «Әрекеттер»
+журналында көрсетіледі. 12 секунд бойы дыбыс болмаса, жазба тоқтап, микрофон
+баптауын тексеру хабарламасы шығады. Бірінші жергілікті тану кезінде Whisper
+моделі жүктеледі; интернет қажет. Mac микрофоны мен нақты қазақша тану дәлдігі
+осы Linux ортасында тексерілмеді.

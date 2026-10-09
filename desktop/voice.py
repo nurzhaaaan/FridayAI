@@ -1,6 +1,9 @@
 """Native microphone recording and local/cloud transcription."""
 
 import io
+import math
+import struct
+import time
 from pathlib import Path
 import tempfile
 import threading
@@ -14,6 +17,9 @@ class Microphone:
         self.rate = 16000
         self.samples = 0
         self.lock = threading.Lock()
+        self.level = 0.0
+        self.started_at = 0.0
+        self.last_voice_at = None
 
     def start(self):
         import sounddevice as sd
@@ -22,11 +28,22 @@ class Microphone:
         self.rate = int(info["default_samplerate"])
         self.frames = []
         self.samples = 0
+        self.level = 0.0
+        self.started_at = time.monotonic()
+        self.last_voice_at = None
 
-        def callback(data, frames, time, status):
+        def callback(data, frames, timing, status):
             with self.lock:
                 if self.samples < self.rate * 60:
-                    self.frames.append(bytes(data))
+                    raw = bytes(data)
+                    values = struct.unpack("<" + "h" * (len(raw) // 2), raw)
+                    self.level = (
+                        math.sqrt(sum(v * v for v in values) / max(1, len(values)))
+                        / 32768
+                    )
+                    if self.level >= 0.012:
+                        self.last_voice_at = time.monotonic()
+                    self.frames.append(raw)
                     self.samples += frames
 
         self.stream = sd.RawInputStream(
@@ -38,6 +55,14 @@ class Microphone:
             self.stream.close()
             self.stream = None
             raise
+
+    def recording_state(self):
+        """Finish after speech followed by silence; never transcribe pure silence."""
+        now = time.monotonic()
+        with self.lock:
+            if self.last_voice_at is not None:
+                return "complete" if now - self.last_voice_at >= 1.8 else "listening"
+            return "silent" if now - self.started_at >= 12 else "listening"
 
     def stop(self):
         if self.stream:

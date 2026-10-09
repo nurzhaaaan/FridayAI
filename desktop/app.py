@@ -262,6 +262,9 @@ class Window(QMainWindow):
                 "assistant",
                 "Сәлем! Мен Friday. Папканы таңдаңыз, содан кейін файлды талдау, нәтиже жазу немесе қолданба ашу туралы тапсырма беріңіз. Жергілікті AI үшін Ollama-да qwen3:4b моделін жүктеңіз. Дауыс тану моделі бірінші рет жүктеледі.",
             )
+        self.voice_monitor = QTimer(self)
+        self.voice_monitor.setInterval(100)
+        self.voice_monitor.timeout.connect(self.monitor_recording)
         self.record_timer = QTimer(self)
         self.record_timer.setSingleShot(True)
         self.record_timer.timeout.connect(self.toggle_recording)
@@ -564,11 +567,13 @@ class Window(QMainWindow):
             self.mic_button.setText("■ Жазуды тоқтатып жіберу")
             self.send_button.setEnabled(False)
             self.record_timer.start(60000)
+            self.voice_monitor.start()
             self.progress(
-                "Тыңдап тұрмын. Аяқтағанда микрофон батырмасын қайта басыңыз."
+                "Тыңдап тұрмын. Бұйрықты айтыңыз; сөйлеу аяқталғанда автоматты жіберіледі."
             )
             return
         self.record_timer.stop()
+        self.voice_monitor.stop()
         self.recording = False
         self.mic_button.setText("● Дауыспен айту")
         try:
@@ -589,13 +594,27 @@ class Window(QMainWindow):
                 else:
                     self.emit(self.bridge.failure, "Тоқтатылды.")
             except Exception as exc:
-                self.emit(self.bridge.failure, friendly_error(exc))
+                self.emit(self.bridge.failure, "Дауыс тану: " + friendly_error(exc))
 
         threading.Thread(target=task, daemon=True).start()
+
+    def monitor_recording(self):
+        if not self.recording:
+            self.voice_monitor.stop()
+            return
+        state = self.microphone.recording_state()
+        if state == "complete":
+            self.toggle_recording()
+        elif state == "silent":
+            self.stop()
+            self.failed(
+                "Микрофон дыбыс қабылдамады. System Settings → Sound → Input ішінде микрофонды таңдаңыз және Privacy & Security → Microphone рұқсатын тексеріңіз."
+            )
 
     def transcribed(self, text):
         self.set_busy(False)
         self.input.setPlainText(text)
+        self.progress("Танылған бұйрық: " + text)
         if text.casefold().strip(" .!?") in ("тоқта", "стоп", "stop"):
             self.stop()
             return
@@ -669,6 +688,7 @@ class Window(QMainWindow):
             self.microphone.close()
             self.recording = False
             self.record_timer.stop()
+            self.voice_monitor.stop()
             self.mic_button.setText("● Дауыспен айту")
             self.set_busy(False)
         self.progress("Тоқтату сұралды. Орындалған өзгерістер автоматты қайтарылмайды.")
@@ -684,6 +704,8 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         self.closing = True
+        self.voice_monitor.stop()
+        self.record_timer.stop()
         self.cancel.set()
         self.microphone.close()
         self.stop_speech()

@@ -100,3 +100,64 @@ class NativeGUItests(unittest.TestCase):
             window.failed("Микрофон қолжетімсіз")
             self.assertEqual(window.reactor.state, "error")
             window.close()
+
+    def test_voice_pause_transcribes_and_executes_without_second_click(self):
+        with (
+            patch("desktop.storage.load", return_value={}),
+            patch("desktop.storage.save"),
+        ):
+            window = Window()
+            window.speak_check.setChecked(False)
+            with (
+                patch.object(window.microphone, "start"),
+                patch.object(
+                    window.microphone, "stop", return_value=b"recorded-wav"
+                ) as stop,
+                patch.object(
+                    window.microphone, "recording_state", return_value="complete"
+                ),
+                patch.object(
+                    window.transcriber, "transcribe", return_value="Calculator аш"
+                ) as transcribe,
+                patch("desktop.app.Agent.run", return_value="Calculator ашылды") as run,
+            ):
+                window.toggle_recording()
+                self.assertTrue(window.recording)
+                window.monitor_recording()
+                self.wait(
+                    lambda: (
+                        bool(window.history)
+                        and window.history[-1]["role"] == "assistant"
+                    )
+                )
+                stop.assert_called_once()
+                transcribe.assert_called_once_with(b"recorded-wav", "ollama", "", "kk")
+                self.assertEqual(run.call_args.args[0], "Calculator аш")
+                self.assertIn(
+                    "Танылған бұйрық: Calculator аш", window.events.toPlainText()
+                )
+                self.assertFalse(window.recording)
+                self.assertFalse(window.voice_monitor.isActive())
+                self.assertTrue(window.mic_button.isEnabled())
+            window.close()
+
+    def test_silent_microphone_stops_without_submitting(self):
+        with (
+            patch("desktop.storage.load", return_value={}),
+            patch("desktop.storage.save"),
+        ):
+            window = Window()
+            with (
+                patch.object(window.microphone, "start"),
+                patch.object(window.microphone, "close"),
+                patch.object(
+                    window.microphone, "recording_state", return_value="silent"
+                ),
+                patch.object(window, "submit") as submit,
+            ):
+                window.toggle_recording()
+                window.monitor_recording()
+                self.assertFalse(window.recording)
+                self.assertIn("Микрофон дыбыс қабылдамады", window.status.text())
+                submit.assert_not_called()
+            window.close()
