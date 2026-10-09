@@ -90,6 +90,18 @@
         ></div>
       </div>
       <div class="composer-area">
+        <div class="voice-session">
+          <button
+            type="button"
+            id="voice-session"
+            class="secondary"
+            aria-pressed="false"
+          >
+            ◉ Friday-мен сөйлесу</button
+          ><span id="session-state" role="status"
+            >Тыңдау → ойлану → дауыспен жауап</span
+          >
+        </div>
         <div id="notice" class="notice" role="status"></div>
         <button type="button" id="retry" class="secondary hidden">
           Қайта жіберу
@@ -156,8 +168,9 @@
         <p id="connection-info"></p>
         <small
           >API кілті серверде сақталады. Әңгімелер осы браузерде сақталады; AI
-          сұраулары OpenAI-ға жіберіледі. Дауыс тану браузер провайдерінің
-          қызметін қолдануы мүмкін.</small
+          сұраулары таңдалған қызметке жіберіледі (Ollama — жергілікті, OpenAI —
+          бұлтта). Дауыс тану браузер провайдерінің қызметін қолдануы
+          мүмкін.</small
         >
       </div>
       <button id="clear-all" class="danger">Барлық әңгімелерді өшіру</button>

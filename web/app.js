@@ -11,6 +11,39 @@ let pending = null;
 let recognition = null;
 let listening = false;
 let configured = false;
+let voiceMode = false;
+let speaking = false;
+let restartTimer = null;
+let speechFinish = null;
+function cancelSpeech() {
+  if (speechFinish) speechFinish(false);
+  window.speechSynthesis?.cancel();
+}
+function sessionState(text) {
+  $("#session-state").textContent = text;
+}
+function stopSession() {
+  voiceMode = false;
+  clearTimeout(restartTimer);
+  const previous = recognition;
+  recognition = null;
+  previous?.abort?.();
+  listening = false;
+  $("#mic").classList.remove("listening");
+  $("#voice-label").textContent = "Мәтін немесе дауыс";
+  cancelSpeech();
+  $("#voice-session").setAttribute("aria-pressed", "false");
+  $("#voice-session").textContent = "◉ Friday-мен сөйлесу";
+  $(".orb").classList.remove("voice-active");
+  sessionState("Дауыс режимі өшірулі");
+}
+function resumeListening() {
+  clearTimeout(restartTimer);
+  if (!voiceMode || pending || speaking || listening) return;
+  restartTimer = setTimeout(() => {
+    if (voiceMode && !pending && !speaking && !listening) startListening(true);
+  }, 400);
+}
 function notice(text) {
   $("#notice").textContent = text;
 }
@@ -65,7 +98,7 @@ function button(text, action, label) {
   return b;
 }
 function newChat() {
-  window.speechSynthesis?.cancel();
+  stopSession();
   const c = { id: crypto.randomUUID(), title: "Жаңа әңгіме", messages: [] };
   state.chats.unshift(c);
   state.active = c.id;
@@ -91,6 +124,7 @@ function renderHistory() {
       button(
         c.title,
         () => {
+          stopSession();
           state.active = c.id;
           save();
           render();
@@ -119,24 +153,51 @@ function renderHistory() {
   }
 }
 function speak(text) {
-  if (!("speechSynthesis" in window))
-    return notice("Бұл браузер дауыстап оқуды қолдамайды.");
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = state.settings.lang;
-  const voice = window.speechSynthesis
-    .getVoices()
-    .find((v) =>
-      v.lang.toLowerCase().startsWith(state.settings.lang.slice(0, 2)),
-    );
-  if (voice) utterance.voice = voice;
-  else if (state.settings.lang === "kk-KZ")
-    notice(
-      "Қазақша дауыс табылмады. Құрылғыдағы дауыстарға байланысты оқылуы мүмкін.",
-    );
-  utterance.onerror = () =>
-    notice("Дауыстап оқу орындалмады. Браузердің дауыс баптауын тексеріңіз.");
-  window.speechSynthesis.speak(utterance);
+  if (
+    !("speechSynthesis" in window) ||
+    !("SpeechSynthesisUtterance" in window)
+  ) {
+    notice("Бұл браузер дауыстап оқуды қолдамайды.");
+    return Promise.resolve(false);
+  }
+  cancelSpeech();
+  return new Promise((resolve) => {
+    speaking = true;
+    recognition?.abort?.();
+    if (voiceMode) sessionState("Friday жауап беруде…");
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = state.settings.lang;
+    const voice = window.speechSynthesis
+      .getVoices()
+      .find((v) =>
+        v.lang.toLowerCase().startsWith(state.settings.lang.slice(0, 2)),
+      );
+    if (voice) utterance.voice = voice;
+    else if (state.settings.lang === "kk-KZ")
+      notice(
+        "Қазақша дауыс жоқ болса, Баптаулардан орысша немесе ағылшынша таңдаңыз.",
+      );
+    let finished = false;
+    const done = (ok) => {
+      if (finished) return;
+      finished = true;
+      speaking = false;
+      speechFinish = null;
+      resolve(ok);
+      resumeListening();
+    };
+    speechFinish = done;
+    utterance.onend = () => done(true);
+    utterance.onerror = () => {
+      notice("Дауыстап оқу орындалмады. Құрылғының дауыс баптауын тексеріңіз.");
+      done(false);
+    };
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      done(false);
+    }
+  });
 }
 function render() {
   renderHistory();
@@ -210,6 +271,8 @@ async function send(retry = false) {
   }
   c.failed = false;
   pending = c.id;
+  recognition?.abort?.();
+  if (voiceMode) sessionState("Friday ойлануда…");
   save();
   render();
   notice("");
@@ -236,9 +299,13 @@ async function send(retry = false) {
       throw new Error("AI бос жауап қайтарды.");
     c.messages.push({ role: "assistant", content: data.answer });
     save();
-    if (state.active === c.id && state.settings.speak) speak(data.answer);
+    if (state.active === c.id && (voiceMode || state.settings.speak)) {
+      const ok = await speak(data.answer);
+      if (!ok && voiceMode) stopSession();
+    }
   } catch (error) {
     c.failed = true;
+    if (voiceMode) stopSession();
     save();
     if (state.active === c.id) {
       notice(
@@ -251,6 +318,7 @@ async function send(retry = false) {
     clearTimeout(timer);
     pending = null;
     render();
+    resumeListening();
   }
 }
 function resizeInput() {
@@ -303,9 +371,7 @@ $("#auto-speak").addEventListener("change", (e) => {
   state.settings.speak = e.target.checked;
   save();
 });
-$("#stop-speech").addEventListener("click", () =>
-  window.speechSynthesis?.cancel(),
-);
+$("#stop-speech").addEventListener("click", () => stopSession());
 for (const b of document.querySelectorAll(".close"))
   b.addEventListener("click", () => b.closest("dialog").close());
 $("#clear-all").addEventListener("click", () => {
@@ -373,52 +439,104 @@ $("#note-form").addEventListener("submit", (e) => {
   renderNotes();
 });
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-$("#mic").addEventListener("click", () => {
-  if (!Recognition)
+function startListening(automatic = false) {
+  if (!Recognition || !window.isSecureContext) {
+    stopSession();
     return notice(
-      "Бұл браузер дауыс тануды қолдамайды. Chrome немесе Edge қолданыңыз.",
+      "Дауыс режиміне Chrome/Edge және HTTPS немесе localhost қажет.",
     );
-  if (!window.isSecureContext)
-    return notice("Микрофон үшін HTTPS немесе localhost қажет.");
-  if (listening) {
-    recognition.stop();
-    return;
   }
-  recognition = new Recognition();
-  recognition.lang = state.settings.lang;
-  recognition.interimResults = false;
-  recognition.onstart = () => {
+  if (pending || speaking) return;
+  const current = new Recognition();
+  recognition = current;
+  current.lang = state.settings.lang;
+  current.interimResults = false;
+  current.onstart = () => {
+    if (recognition !== current) return;
     listening = true;
     $("#mic").classList.add("listening");
     $("#voice-label").textContent = "Тыңдап тұрмын…";
-    notice("Сөйлеңіз. Аяқтағаннан кейін мәтінді тексеріп, жіберіңіз.");
+    if (voiceMode)
+      sessionState("Тыңдап тұрмын. Тоқтату: «тоқта» немесе батырманы басыңыз.");
+    else notice("Сөйлеңіз. Мәтінді тексеріп, жіберіңіз.");
   };
-  recognition.onresult = (e) => {
-    $("#input").value = (
-      $("#input").value +
-      " " +
-      e.results[0][0].transcript
-    ).trim();
+  current.onresult = (e) => {
+    if (recognition !== current || (automatic && !voiceMode)) return;
+    const transcript = e.results[0][0].transcript.trim();
+    if (!transcript) return;
+    if (
+      automatic &&
+      /^(тоқта|тоқтат|стоп|stop|stop friday)[.!?]?$/i.test(transcript)
+    ) {
+      stopSession();
+      return notice("Дауыс режимі тоқтатылды.");
+    }
+    $("#input").value = automatic
+      ? transcript
+      : ($("#input").value + " " + transcript).trim();
     resizeInput();
-    $("#input").focus();
+    if (automatic) send();
+    else $("#input").focus();
   };
-  recognition.onerror = (e) =>
+  current.onerror = (e) => {
+    if (recognition !== current) return;
+    if (e.error === "aborted" || e.error === "no-speech") return;
+    stopSession();
     notice(
       e.error === "not-allowed"
-        ? "Микрофонға рұқсат берілмеді. Браузер рұқсатын тексеріңіз."
-        : "Дауыс танылмады: " + e.error + ". Мәтінмен жаза аласыз.",
+        ? "Микрофонға рұқсат беріңіз."
+        : "Дауыс тану қатесі: " + e.error + ". Мәтінмен жаза аласыз.",
     );
-  recognition.onend = () => {
+  };
+  current.onend = () => {
+    if (recognition !== current) return;
     listening = false;
+    recognition = null;
     $("#mic").classList.remove("listening");
     $("#voice-label").textContent = "Мәтін немесе дауыс";
+    resumeListening();
   };
   try {
-    recognition.start();
+    current.start();
   } catch {
+    stopSession();
     notice("Микрофонды қосу мүмкін болмады.");
   }
+}
+$("#mic").addEventListener("click", () => {
+  if (voiceMode) {
+    stopSession();
+    return;
+  }
+  if (listening) {
+    recognition?.stop();
+    return;
+  }
+  startListening();
 });
+$("#voice-session").addEventListener("click", () => {
+  if (voiceMode) {
+    stopSession();
+    return;
+  }
+  if (pending) return notice("Алдымен жауаптың аяқталуын күтіңіз.");
+  if (!configured)
+    return notice("Алдымен Ollama моделін немесе OpenAI кілтін қосыңыз.");
+  stopSession();
+  if (!activeChat()) newChat();
+  voiceMode = true;
+  $("#voice-session").setAttribute("aria-pressed", "true");
+  $("#voice-session").textContent = "■ Сөйлесуді тоқтату";
+  $(".orb").classList.add("voice-active");
+  notice(
+    "Айтқаныңыз автоматты жіберіледі. Friday сөйлеген кезде микрофон тыңдамайды.",
+  );
+  startListening(true);
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopSession();
+});
+window.addEventListener("pagehide", stopSession);
 async function checkStatus() {
   try {
     const response = await fetch("/api/status");
@@ -426,14 +544,20 @@ async function checkStatus() {
     const data = await response.json();
     configured = data.configured;
     $("#status").textContent = configured
-      ? "AI кілті орнатылған"
-      : "API кілті қажет";
+      ? data.provider === "ollama"
+        ? "Жергілікті AI дайын"
+        : "AI кілті орнатылған"
+      : data.provider === "ollama"
+        ? "Ollama қосылмаған"
+        : "API кілті қажет";
     $("#status").classList.toggle("online", configured);
     $("#connection-info").textContent = configured
-      ? `Модель: ${data.model}. Қосылым алғашқы сұрау кезінде тексеріледі.`
-      : "Сервердің FRIDAY_API_KEY немесе Nurzhik_06 айнымалысына OpenAI кілтін орнатыңыз, содан кейін серверді қайта іске қосыңыз.";
+      ? `Қызмет: ${data.provider || "openai"}. Модель: ${data.model}. ${data.detail || "Қосылым алғашқы сұрауда тексеріледі."}`
+      : data.detail || "Ollama моделін немесе OpenAI API кілтін қосыңыз.";
     if (!configured)
-      notice("Интерфейс дайын. AI жауаптары үшін серверге API кілтін қосыңыз.");
+      notice(
+        data.detail || "AI жауаптары үшін Ollama немесе API кілтін қосыңыз.",
+      );
   } catch {
     $("#status").textContent = "Сервер қолжетімсіз";
     $("#status").classList.remove("online");

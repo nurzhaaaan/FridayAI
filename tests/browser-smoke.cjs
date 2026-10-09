@@ -38,6 +38,7 @@ const assert = require("node:assert/strict");
         },
         speak(utterance) {
           window.__spokenText = utterance.text;
+          setTimeout(() => utterance.onend?.(), 20);
         },
       },
     });

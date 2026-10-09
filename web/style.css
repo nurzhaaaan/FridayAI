@@ -735,3 +735,23 @@ select {
     scroll-behavior: auto !important;
   }
 }
+
+.voice-session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 5px 12px;
+  flex-wrap: wrap;
+}
+.voice-session span {
+  font-size: 10px;
+  color: var(--muted);
+}
+#voice-session[aria-pressed="true"] {
+  background: #a3eed7;
+  color: #10251f;
+}
+.orb.voice-active {
+  box-shadow: 0 0 80px #70d8b644;
+  animation: pulse 2s infinite;
+}

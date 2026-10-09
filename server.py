@@ -49,7 +49,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         if path == '/api/status':
-            return self.reply(200, {'configured': ai_core.configured(), 'model': os.getenv('FRIDAY_MODEL', 'gpt-4o-mini')})
+            return self.reply(200, ai_core.status())
         files = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if path not in files:
             return self.reply(404, {'error': 'Табылмады.'})
@@ -74,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError):
             return self.reply(400, {'error': 'Хабарлама форматы қате (шегі: 12 000 таңба, 40 хабарлама).'})
         if not ai_core.configured():
-            return self.reply(503, {'error': 'AI қосылмаған. Серверде FRIDAY_API_KEY немесе Nurzhik_06 кілтін орнатыңыз.'})
+            return self.reply(503, {'error': 'AI қосылмаған. ' + ai_core.status()['detail']})
         if not SLOTS.acquire(blocking=False):
             return self.reply(429, {'error': 'Сервер бос емес. Сәл кейін қайталаңыз.'})
         try:
@@ -82,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             print('AI request failed:', type(exc).__name__, flush=True)
             errors = {'AuthenticationError': 'API кілті жарамсыз.', 'RateLimitError': 'API лимиті немесе баланс шектеуі.', 'APITimeoutError': 'Жауап күту уақыты аяқталды.'}
-            self.reply(502, {'error': errors.get(type(exc).__name__, 'AI қызметіне қосылу мүмкін болмады. Байланыс пен кілтті тексеріңіз.')})
+            self.reply(502, {'error': errors.get(type(exc).__name__, 'AI қызметіне қосылу мүмкін болмады. Ollama іске қосылғанын немесе API байланысын тексеріңіз.')})
         finally:
             SLOTS.release()
 

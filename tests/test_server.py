@@ -91,6 +91,50 @@ class APITests(unittest.TestCase):
         self.assertEqual(call['messages'][0]['role'], 'system')
         self.assertEqual(call['messages'][1]['content'], 'question')
 
+class OllamaTests(unittest.TestCase):
+    @patch.dict(os.environ, {'FRIDAY_PROVIDER': 'ollama', 'FRIDAY_MODEL': 'qwen3:4b'}, clear=True)
+    def test_local_http_readiness_and_chat(self):
+        received = []
+        class LocalHandler(__import__('http.server', fromlist=['BaseHTTPRequestHandler']).BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.end_headers()
+                self.wfile.write(json.dumps({'models': [{'name': 'qwen3:4b'}]}).encode())
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200); self.end_headers()
+                self.wfile.write(json.dumps({'message': {'content': 'Жергілікті жауап'}}).encode())
+            def log_message(self, *args): pass
+        local = ThreadingHTTPServer(('127.0.0.1', 0), LocalHandler)
+        thread = threading.Thread(target=local.serve_forever, daemon=True); thread.start()
+        try:
+            with patch('ai_core.OLLAMA_URL', f'http://127.0.0.1:{local.server_port}'):
+                self.assertTrue(ai_core.configured())
+                self.assertEqual(ai_core.ask_ai('Сәлем'), 'Жергілікті жауап')
+            self.assertEqual(received[0]['model'], 'qwen3:4b')
+            self.assertFalse(received[0]['stream'])
+            self.assertFalse(received[0]['think'])
+            self.assertEqual(received[0]['messages'][-1]['content'], 'Сәлем')
+        finally:
+            local.shutdown(); local.server_close(); thread.join()
+
+    @patch.dict(os.environ, {'FRIDAY_PROVIDER': 'ollama'}, clear=True)
+    @patch('ai_core.local_request', return_value={'models': []})
+    def test_model_must_be_installed(self, request):
+        self.assertFalse(ai_core.configured())
+        self.assertIn('ollama pull', ai_core.status()['detail'])
+
+    @patch.dict(os.environ, {'FRIDAY_PROVIDER': 'ollama'}, clear=True)
+    @patch('ai_core.local_request', side_effect=ConnectionError('private details'))
+    def test_local_server_missing(self, request):
+        self.assertFalse(ai_core.configured())
+        self.assertNotIn('private', ai_core.status()['detail'])
+
+    @patch.dict(os.environ, {'FRIDAY_PROVIDER': 'ollama'}, clear=True)
+    @patch('ai_core.local_request', return_value={'message': {'content': ''}})
+    def test_empty_local_answer_fails(self, request):
+        with self.assertRaisesRegex(RuntimeError, 'EMPTY_RESPONSE'):
+            ai_core.ask_ai('hello')
+
 
 if __name__ == '__main__':
     unittest.main()
