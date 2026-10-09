@@ -4,6 +4,16 @@ Friday now opens as a **native Qt desktop window**, with no Safari, Chrome or we
 
 ![Friday native desktop window](docs/desktop.png)
 
+Интерфейс JARVIS стиліндегі көгілдір HUD: анимацияланған реактор, жұмыс папкасы,
+әңгіме және әрекеттер журналы. Реактор тыңдау, тапсырманы орындау, дыбыстау және
+қате күйлерін көрсетеді. Анимация микрофон дыбысының деңгейін өлшемейді.
+
+`libportaudio.dylib Not Opened` шықса, осы жаңартылған нұсқаны бөлек папкаға
+шығарып, `start.command` арқылы іске қосыңыз. Іске қосқыш кітапханаларды ескі
+репозиторий папкасынан іздетпейді. Gatekeeper қорғанысын өшірмеңіз. Егер ескерту
+қайталанса, бұғатталған кітапхананың толық жолы қажет; Mac-тағы бұл түзету
+Linux-тағы GUI тексерулерінен бөлек тексерілуі тиіс.
+
 Screenshot: the Qt GUI rendered in the Linux cloud; not a physical Mac capture.
 
 ## Start on your M1 MacBook

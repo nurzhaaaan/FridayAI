@@ -78,3 +78,25 @@ class NativeGUItests(unittest.TestCase):
                 self.assertEqual(window.input.toPlainText(), "Calculator аш")
                 submit.assert_called_once()
             window.close()
+
+    def test_reactor_tracks_recording_work_and_error(self):
+        with (
+            patch("desktop.storage.load", return_value={}),
+            patch("desktop.storage.save"),
+        ):
+            window = Window()
+            with (
+                patch.object(window.microphone, "start"),
+                patch.object(window.microphone, "close"),
+            ):
+                window.toggle_recording()
+                self.assertEqual(window.reactor.state, "listening")
+                self.assertFalse(window.send_button.isEnabled())
+                window.stop()
+                self.assertEqual(window.reactor.state, "idle")
+            window.set_busy(True)
+            window.progress("Орындалуда")
+            self.assertEqual(window.reactor.state, "thinking")
+            window.failed("Микрофон қолжетімсіз")
+            self.assertEqual(window.reactor.state, "error")
+            window.close()

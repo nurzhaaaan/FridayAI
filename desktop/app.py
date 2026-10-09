@@ -30,23 +30,31 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QFileSystemModel,
 )
+from .hud import Reactor
 from .agent import Agent, Model
 from .tools import Workspace, applications, open_application
 from .voice import Microphone, Transcriber
 from . import storage
 
 STYLE = """
-QWidget { background:#101620; color:#e5edf5; font-size:13px; }
-QMainWindow { background:#101620; }
-QLabel#title {font-size:32px; font-weight:600; color:#a3eed7;}
-QLabel#sub {color:#8b9bb0; font-size:11px;}
-QPushButton {border:1px solid #334252; border-radius:8px; padding:10px 14px; background:#1b2734;}
-QPushButton:hover {border-color:#a3eed7;}
-QPushButton:disabled {color:#59677a;}
-QPushButton#send {background:#a3eed7;color:#10251f;font-weight:600;}
-QTextBrowser,QPlainTextEdit,QLineEdit,QComboBox,QTreeView {border:1px solid #2b3849;border-radius:8px;padding:8px;background:#0d131c;}
-QComboBox QAbstractItemView {background:#1b2734;color:#e5edf5;}
+QWidget {background:#07121d;color:#c6e5ef;font-size:12px;font-family:"Helvetica Neue";}
+QMainWindow {background:#07121d;}
+QWidget#panel {border:1px solid #193b4c;background:#0a1825;border-radius:3px;}
+QLabel#title {font-size:26px;font-weight:600;color:#65e8ff;letter-spacing:5px;}
+QLabel#sub {color:#6593a6;font-size:10px;}
+QLabel#section {color:#54d5ee;font-size:11px;font-weight:600;padding:8px 0;}
+QPushButton {border:1px solid #225268;border-radius:3px;padding:10px;background:#0d2332;color:#b9e8f4;}
+QPushButton:hover {border-color:#65e8ff;background:#123447;}
+QPushButton:disabled {color:#496372;border-color:#182e3c;}
+QPushButton#send {background:#53d8ef;color:#071c28;font-weight:600;}
+QTextBrowser,QPlainTextEdit,QLineEdit,QComboBox,QTreeView {border:1px solid #193b4c;border-radius:3px;padding:8px;background:#081420;selection-background-color:#245b70;}
+QComboBox QAbstractItemView {background:#102635;color:#c6e5ef;}
 QTreeView {font-size:11px;}
+QTabWidget::pane {border:0;}
+QTabBar::tab {background:#0b1e2c;color:#6f9bac;padding:10px;border-bottom:1px solid #193b4c;}
+QTabBar::tab:selected {color:#65e8ff;border-bottom:2px solid #65e8ff;}
+QScrollBar:vertical {background:#081420;width:7px;}
+QScrollBar::handle:vertical {background:#245268;min-height:25px;}
 """
 
 
@@ -84,7 +92,7 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Friday — Mac AI Assistant")
-        self.resize(1120, 800)
+        self.resize(1320, 850)
         saved = storage.load()
         prefs = saved.get("settings", {})
         self.history = (
@@ -118,34 +126,43 @@ class Window(QMainWindow):
         self.bridge.speech_done.connect(lambda: self.progress("Дауыс аяқталды."))
         container = QWidget()
         self.setCentralWidget(container)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(22, 22, 22, 22)
-        layout.setSpacing(20)
-        side = QWidget()
-        side.setMaximumWidth(310)
-        side.setMinimumWidth(250)
-        left = QVBoxLayout(side)
-        title = QLabel("FRIDAY")
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(22, 16, 22, 16)
+        header = QHBoxLayout()
+        title = QLabel("F R I D A Y")
         title.setObjectName("title")
-        left.addWidget(title)
-        subtitle = QLabel("MAC DESKTOP INTELLIGENCE\nФайлдар · Қолданбалар · Дауыс")
+        header.addWidget(title)
+        subtitle = QLabel("PERSONAL INTELLIGENCE  /  MAC DESKTOP")
         subtitle.setObjectName("sub")
-        left.addWidget(subtitle)
+        header.addWidget(subtitle)
+        header.addStretch()
+        self.service_label = QLabel()
+        self.service_label.setObjectName("section")
+        header.addWidget(self.service_label)
+        outer.addLayout(header)
+        layout = QHBoxLayout()
+        layout.setSpacing(16)
+        outer.addLayout(layout, 1)
+        side = QWidget()
+        side.setObjectName("panel")
+        side.setFixedWidth(240)
+        left = QVBoxLayout(side)
+        section = QLabel("01 / ЖҰМЫС КЕҢІСТІГІ")
+        section.setObjectName("section")
+        left.addWidget(section)
         self.folder_label = QLabel("Жұмыс папкасы таңдалмаған")
         self.folder_label.setWordWrap(True)
         left.addWidget(self.folder_label)
-        self.folder_button = QPushButton("Жұмыс папкасын таңдау")
-        self.folder_button.clicked.connect(self.pick_folder)
-        left.addWidget(self.folder_button)
-        self.finder_button = QPushButton("Finder ішінде ашу")
-        self.finder_button.clicked.connect(self.open_finder)
-        left.addWidget(self.finder_button)
-        self.apps_button = QPushButton("Қолданбаны ашу")
-        self.apps_button.clicked.connect(self.pick_app)
-        left.addWidget(self.apps_button)
-        self.file_button = QPushButton("Файлды талдауға таңдау")
-        self.file_button.clicked.connect(self.pick_file)
-        left.addWidget(self.file_button)
+        for attr, text, callback in (
+            ("folder_button", "＋  Папканы таңдау", self.pick_folder),
+            ("finder_button", "↗  Finder ішінде ашу", self.open_finder),
+            ("apps_button", "▦  Қолданбаны ашу", self.pick_app),
+            ("file_button", "⌕  Файлды талдау", self.pick_file),
+        ):
+            button = QPushButton(text)
+            button.clicked.connect(callback)
+            setattr(self, attr, button)
+            left.addWidget(button)
         self.tree = QTreeView()
         self.tree.setMinimumHeight(130)
         self.fs = QFileSystemModel(self)
@@ -154,55 +171,70 @@ class Window(QMainWindow):
             self.tree.hideColumn(column)
         self.tree.doubleClicked.connect(self.tree_selected)
         left.addWidget(self.tree, 1)
-        self.settings_button = QPushButton("Баптаулар")
+        self.settings_button = QPushButton("⚙  Баптаулар")
         self.settings_button.clicked.connect(self.settings_dialog)
         left.addWidget(self.settings_button)
         self.clear_button = QPushButton("Әңгіме тарихын өшіру")
         self.clear_button.clicked.connect(self.clear_history)
         left.addWidget(self.clear_button)
-        hint = QLabel(
-            "AI тек таңдаған папкада жұмыс істейді.\nФайл өзгерістері сіздің растауыңызды күтеді."
-        )
+        hint = QLabel("Таңдалған папкаға қолжетімділік.\nФайл өзгерісін сіз растайсыз.")
         hint.setWordWrap(True)
         hint.setObjectName("sub")
         left.addWidget(hint)
-        right = QWidget()
-        body = QVBoxLayout(right)
-        body.setContentsMargins(0, 0, 0, 0)
-        self.status = QLabel("Дайын. Жұмыс папкасын және AI қызметін таңдаңыз.")
+        layout.addWidget(side)
+        center = QWidget()
+        center.setObjectName("panel")
+        body = QVBoxLayout(center)
+        label = QLabel("02 / INTELLIGENCE CORE")
+        label.setObjectName("section")
+        body.addWidget(label)
+        self.reactor = Reactor()
+        body.addWidget(self.reactor, 1)
+        self.status = QLabel("Дайын. Папканы және AI қызметін таңдаңыз.")
         self.status.setWordWrap(True)
         body.addWidget(self.status)
-        self.chat = QTextBrowser()
-        self.chat.setOpenExternalLinks(False)
-        body.addWidget(self.chat, 1)
-        self.events = QPlainTextEdit()
-        self.events.setReadOnly(True)
-        self.events.setMaximumHeight(92)
-        self.events.setPlaceholderText("Орындалған әрекеттер осы жерде көрсетіледі")
-        body.addWidget(self.events)
-        self.input = QPlainTextEdit()
-        self.input.setMaximumHeight(110)
-        self.input.setPlaceholderText(
-            "Мысалы: папкадағы PDF-ті оқып, қорытындысын summary.md файлына жаз"
-        )
-        body.addWidget(self.input)
-        buttons = QHBoxLayout()
+        voice = QHBoxLayout()
         self.mic_button = QPushButton("● Дауыспен айту")
         self.mic_button.clicked.connect(self.toggle_recording)
-        buttons.addWidget(self.mic_button)
+        voice.addWidget(self.mic_button)
+        self.stop_button = QPushButton("■ Тоқтату")
+        self.stop_button.clicked.connect(self.stop)
+        voice.addWidget(self.stop_button)
+        body.addLayout(voice)
         self.speak_check = QCheckBox("Жауапты дауыстап оқу")
         self.speak_check.setChecked(prefs.get("speak", True))
-        buttons.addWidget(self.speak_check)
-        self.stop_button = QPushButton("Тоқтату")
-        self.stop_button.clicked.connect(self.stop)
-        buttons.addWidget(self.stop_button)
-        self.send_button = QPushButton("Тапсырманы орында")
+        body.addWidget(self.speak_check)
+        self.input = QPlainTextEdit()
+        self.input.setMaximumHeight(100)
+        self.input.setPlaceholderText(
+            "Тапсырма беріңіз…\nМысалы: PDF-ті оқып, қорытындысын summary.md файлына жаз"
+        )
+        body.addWidget(self.input)
+        self.send_button = QPushButton("ТАПСЫРМАНЫ ОРЫНДА  →")
         self.send_button.setObjectName("send")
         self.send_button.clicked.connect(self.submit)
-        buttons.addWidget(self.send_button)
-        body.addLayout(buttons)
-        layout.addWidget(side)
-        layout.addWidget(right, 1)
+        body.addWidget(self.send_button)
+        layout.addWidget(center, 5)
+        right = QWidget()
+        right.setObjectName("panel")
+        right.setMinimumWidth(290)
+        log = QVBoxLayout(right)
+        label = QLabel("03 / СЕАНС ЖУРНАЛЫ")
+        label.setObjectName("section")
+        log.addWidget(label)
+        tabs = QTabWidget()
+        self.chat = QTextBrowser()
+        self.chat.setOpenExternalLinks(False)
+        tabs.addTab(self.chat, "Әңгіме")
+        self.events = QPlainTextEdit()
+        self.events.setReadOnly(True)
+        self.events.setPlaceholderText("Орындалған әрекеттер осы жерде көрсетіледі")
+        tabs.addTab(self.events, "Әрекеттер")
+        log.addWidget(tabs)
+        layout.addWidget(right, 4)
+        footer = QLabel("FRIDAY  /  ДАУЫС · ФАЙЛДАР · ҚОЛДАНБАЛАР")
+        footer.setObjectName("sub")
+        outer.addWidget(footer)
         self.provider = (
             prefs.get("provider", "ollama")
             if prefs.get("provider") in ("ollama", "openai")
@@ -216,6 +248,7 @@ class Window(QMainWindow):
             if prefs.get("language") in ("kk", "ru", "en")
             else "kk"
         )
+        self.service_label.setText(self.provider.upper() + "  /  " + self.model_name)
         self.key = ""
         folder = prefs.get("folder")
         if isinstance(folder, str) and Path(folder).is_dir():
@@ -449,6 +482,12 @@ class Window(QMainWindow):
     def progress(self, message):
         self.status.setText(message)
         self.events.appendPlainText(message)
+        state = "listening" if self.recording else "thinking" if self.busy else "idle"
+        if message.startswith("Қате:"):
+            state = "error"
+        elif message == "Жауап дауыстап оқылуда.":
+            state = "speaking"
+        self.reactor.set_state(state)
 
     def settings_dialog(self):
         dialog = QDialog(self)
@@ -498,6 +537,9 @@ class Window(QMainWindow):
             )
             self.key = key.text().strip()
             self.language = language.currentData()
+            self.service_label.setText(
+                self.provider.upper() + "  /  " + self.model_name
+            )
             self.persist()
 
     def toggle_recording(self):
@@ -563,6 +605,7 @@ class Window(QMainWindow):
         if platform.system() != "Darwin":
             return self.progress("Жүйелік дауыс тек Mac-та қолжетімді.")
         self.stop_speech()
+        self.progress("Жауап дауыстап оқылуда.")
         epoch = self.speech_epoch
         language = self.language
 
